@@ -1,5 +1,5 @@
 import { startRunViaSocket, resumeSession, registerSessionHandlers, unregisterSessionHandlers, getChatRunSocket, respondToolApproval, onPeerUserMessage, respondClarify, type RunEvent, type ContentBlock as ContentBlockImport } from '@/api/hermes/chat'
-import { deleteSession as deleteSessionApi, fetchSession, fetchSessions, setSessionModel, type HermesMessage, type SessionSummary } from '@/api/hermes/sessions'
+import { deleteSession as deleteSessionApi, fetchHermesSession, fetchSession, fetchSessions, setSessionModel, type HermesMessage, type SessionDetail, type SessionSummary } from '@/api/hermes/sessions'
 import { getActiveProfileName } from '@/api/client'
 import { getDownloadUrl } from '@/api/hermes/download'
 import { defineStore } from 'pinia'
@@ -278,6 +278,27 @@ function mapHermesSession(s: SessionSummary): Session {
   }
 }
 
+function mapHermesSessionDetail(s: SessionDetail, profile?: string | null): Session {
+  const sessionProfile = s.profile || profile || 'default'
+  return {
+    id: s.id,
+    profile: sessionProfile,
+    title: s.title || '',
+    source: s.source || undefined,
+    messages: mapHermesMessages(s.messages || []),
+    createdAt: Math.round(s.started_at * 1000),
+    updatedAt: Math.round((s.last_active || s.ended_at || s.started_at) * 1000),
+    model: s.model,
+    provider: s.provider || s.billing_provider || '',
+    messageCount: s.message_count,
+    inputTokens: s.input_tokens,
+    outputTokens: s.output_tokens,
+    endedAt: s.ended_at != null ? Math.round(s.ended_at * 1000) : null,
+    lastActiveAt: s.last_active != null ? Math.round(s.last_active * 1000) : undefined,
+    workspace: s.workspace || null,
+  }
+}
+
 const STORAGE_KEY_PREFIX = 'hermes_active_session_'
 const LEGACY_STORAGE_KEY = 'hermes_active_session'
 
@@ -465,8 +486,9 @@ export const useChatStore = defineStore('chat', () => {
       const currentId = activeSessionId.value
       const legacyActiveKey = legacyStorageKey()
       const storedId = getItemBestEffort(storageKey()) || (legacyActiveKey ? getItemBestEffort(LEGACY_STORAGE_KEY) : null)
-      const targetId = preferredSessionId && sessions.value.some(s => s.id === preferredSessionId)
-        ? preferredSessionId
+      const preferredExists = preferredSessionId && sessions.value.some(s => s.id === preferredSessionId)
+      const targetId = preferredSessionId
+        ? (preferredExists ? preferredSessionId : null)
         : currentId && sessions.value.some(s => s.id === currentId)
           ? currentId
           : storedId && sessions.value.some(s => s.id === storedId)
@@ -474,6 +496,14 @@ export const useChatStore = defineStore('chat', () => {
             : sessions.value[0]?.id
       if (targetId) {
         await switchSession(targetId)
+      } else if (preferredSessionId) {
+        // A route-selected Hermes history session may exist in Hermes state.db
+        // but not in the Web UI local session list. Do not fall back to a
+        // different recent session; ChatView will hydrate the explicit route
+        // session by id/profile immediately after this call. Clear the old
+        // active object so callers cannot mistake a stale session for success.
+        activeSessionId.value = preferredSessionId
+        activeSession.value = null
       } else {
         clearActiveSession()
       }
@@ -767,6 +797,22 @@ export const useChatStore = defineStore('chat', () => {
       // Add new session
       sessions.value.push(session)
     }
+  }
+
+  async function ensureHermesSession(sessionId: string, profile?: string | null): Promise<boolean> {
+    const existing = sessions.value.find(s => s.id === sessionId)
+    if (existing) {
+      await switchSession(sessionId)
+      return true
+    }
+
+    const detail = await fetchHermesSession(sessionId, profile)
+    if (!detail) return false
+
+    const session = mapHermesSessionDetail(detail, profile)
+    addOrUpdateSession(session)
+    await switchSession(sessionId)
+    return true
   }
 
   function updateMessage(sessionId: string, id: string, update: Partial<Message>) {
@@ -2344,6 +2390,7 @@ export const useChatStore = defineStore('chat', () => {
     newChat,
     newCliSession,
     switchSession,
+    ensureHermesSession,
     switchSessionModel,
     addOrUpdateSession,
     clearProviderFromSessions,

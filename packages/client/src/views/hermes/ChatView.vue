@@ -25,8 +25,15 @@ const routeProfile = computed(() => {
 })
 
 async function loadRouteSession() {
-  await chatStore.loadSessions(chatStore.sessionProfileFilter, routeSessionId.value)
-  if (routeSessionId.value && chatStore.activeSessionId !== routeSessionId.value) {
+  const sessionId = routeSessionId.value
+  const profile = routeProfile.value ?? chatStore.sessionProfileFilter
+  await chatStore.loadSessions(profile, sessionId)
+
+  if (!sessionId) return
+  if (chatStore.activeSessionId === sessionId && chatStore.activeSession?.id === sessionId) return
+
+  const hydrated = await chatStore.ensureHermesSession(sessionId, profile)
+  if (!hydrated) {
     await router.replace({ name: 'hermes.chat' })
   }
 }

@@ -20,6 +20,7 @@ import {
 import { downloadFile, getDownloadUrl, fetchFileText } from '@/api/hermes/download'
 
 const LATEX_FENCE_LANGS = new Set(['latex', 'tex', 'math', 'katex'])
+const HTML_PREVIEW_FENCE_LANGS = new Set(['html-preview', 'html_preview', 'artifact-html', 'preview-html'])
 const PREVIEW_AREA_WIDTH = 'min(800px, 100vw)'
 
 function getFenceLanguage(info: string): string {
@@ -28,6 +29,10 @@ function getFenceLanguage(info: string): string {
 
 function isLatexFence(info: string): boolean {
   return LATEX_FENCE_LANGS.has(getFenceLanguage(info))
+}
+
+function isHtmlPreviewFence(info: string): boolean {
+  return HTML_PREVIEW_FENCE_LANGS.has(getFenceLanguage(info))
 }
 
 function normalizeLatexFenceContent(content: string): string {
@@ -56,6 +61,36 @@ function renderLatexFence(content: string): string {
     throwOnError: false,
     strict: 'ignore',
   })}</div>`
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function stripDangerousHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*(['"])[\s\S]*?\1/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/javascript:/gi, '')
+}
+
+function renderHtmlPreview(content: string): string {
+  const safeHtml = stripDangerousHtml(content)
+  const srcdoc = escapeHtmlAttribute(safeHtml)
+  const original = escapeHtmlAttribute(content)
+
+  return `<div class="html-preview-card">
+    <div class="html-preview-toolbar">
+      <span class="html-preview-title">HTML Preview</span>
+      <button class="html-preview-copy" type="button" data-html-source="${original}">复制 HTML</button>
+    </div>
+    <iframe class="html-preview-frame" sandbox="" srcdoc="${srcdoc}"></iframe>
+  </div>`
 }
 
 const props = withDefaults(defineProps<{
@@ -96,6 +131,10 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 
   if (isMermaidFence(token.info)) {
     return renderMermaidPlaceholder(token.content)
+  }
+
+  if (isHtmlPreviewFence(token.info)) {
+    return renderHtmlPreview(token.content)
   }
 
   if (defaultFenceRenderer) {
@@ -356,6 +395,20 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
 
   const target = event.target as HTMLElement
 
+  const htmlPreviewCopy = target.closest('.html-preview-copy') as HTMLElement | null
+  if (htmlPreviewCopy) {
+    event.preventDefault()
+    event.stopPropagation()
+    const html = htmlPreviewCopy.getAttribute('data-html-source') || ''
+    try {
+      await navigator.clipboard.writeText(html)
+      message.success(t('common.copied'))
+    } catch {
+      message.error(t('chat.copyFailed'))
+    }
+    return
+  }
+
   // Handle image clicks for preview
   const img = target.closest('img') as HTMLImageElement | null
   if (img) {
@@ -493,6 +546,53 @@ function closeTextPreview(): void {
 
 <style lang="scss">
 @use '@/styles/variables' as *;
+
+.html-preview-card {
+  margin: 12px 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.html-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #94a3b8);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.html-preview-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.html-preview-copy {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.html-preview-copy:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.html-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 420px;
+  height: 420px;
+  border: 0;
+  background: #ffffff;
+}
 
 .markdown-body {
   font-size: 14px;

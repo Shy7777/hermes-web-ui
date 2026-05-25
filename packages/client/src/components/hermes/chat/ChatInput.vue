@@ -81,6 +81,17 @@ function startResize(e: MouseEvent) {
 // 自动播放语音开关
 const autoPlaySpeech = ref(false)
 
+const htmlPreviewMode = ref(false)
+const HTML_PREVIEW_INSTRUCTION = `请将本次回答生成为一个轻量 Claude Artifact 风格的 HTML 预览。
+要求：
+1. 最终答案必须只包含一个 fenced code block，语言标记为 html-preview。
+2. 在 html-preview 代码块里输出完整可直接预览的 HTML 片段，可以包含 <style>。
+3. 不要使用 <script>，不要引用外部 JS/CSS/字体/图片等远程资源。
+4. 不要使用 onclick/onerror 等事件属性，不要使用 javascript: URL。
+5. 视觉上尽量完整、美观，适合在 sandbox iframe 中展示。
+
+用户需求：`
+
 // 从 localStorage 读取设置
 onMounted(() => {
   const saved = localStorage.getItem('autoPlaySpeech')
@@ -89,6 +100,11 @@ onMounted(() => {
     // 同步到 chat store
     chatStore.setAutoPlaySpeech(autoPlaySpeech.value)
   }
+
+  const savedHtmlPreviewMode = localStorage.getItem('htmlPreviewMode')
+  if (savedHtmlPreviewMode !== null) {
+    htmlPreviewMode.value = savedHtmlPreviewMode === 'true'
+  }
 })
 
 // 监听变化并保存
@@ -96,6 +112,10 @@ watch(autoPlaySpeech, (value) => {
   localStorage.setItem('autoPlaySpeech', String(value))
   // 通知 chat store
   chatStore.setAutoPlaySpeech(value)
+})
+
+watch(htmlPreviewMode, (value) => {
+  localStorage.setItem('htmlPreviewMode', String(value))
 })
 
 const canSend = computed(() => inputText.value.trim() || attachments.value.length > 0)
@@ -301,8 +321,13 @@ function handleDrop(e: DragEvent) {
 // --- Send ---
 
 function handleSend() {
-  const text = inputText.value.trim()
+  let text = inputText.value.trim()
   if (!text && attachments.value.length === 0) return
+
+  if (htmlPreviewMode.value && text && !text.trim().startsWith('/')) {
+    text = `${HTML_PREVIEW_INSTRUCTION}
+${text}`
+  }
 
   chatStore.sendMessage(text, attachments.value.length > 0 ? attachments.value : undefined)
   inputText.value = ''
@@ -439,6 +464,20 @@ function isImage(type: string): boolean {
         <NSwitch
           size="small"
           v-model:value="autoPlaySpeech"
+          :round="false"
+        />
+      </div>
+
+      <div class="html-preview-mode-switch" :class="{ active: htmlPreviewMode }">
+        <NTooltip trigger="hover">
+          <template #trigger>
+            <span class="html-preview-mode-label">HTML</span>
+          </template>
+          {{ htmlPreviewMode ? 'HTML 预览模式：发送时自动要求回答为 html-preview 代码块' : '普通模式：点击开启 HTML 预览模式' }}
+        </NTooltip>
+        <NSwitch
+          size="small"
+          v-model:value="htmlPreviewMode"
           :round="false"
         />
       </div>
@@ -661,6 +700,41 @@ function isImage(type: string): boolean {
     svg {
       opacity: 1;
     }
+  }
+
+  :deep(.n-switch),
+  :deep(.n-switch__rail) {
+    margin-right: 0;
+  }
+}
+
+.html-preview-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 0 8px;
+  border-left: 1px solid $border-light;
+  margin-left: 4px;
+
+  .html-preview-mode-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 18px;
+    padding: 0 6px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 6px;
+    color: #999999;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &.active .html-preview-mode-label {
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.65);
+    background: rgba(245, 158, 11, 0.12);
   }
 
   :deep(.n-switch),

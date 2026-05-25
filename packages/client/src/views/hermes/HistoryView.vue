@@ -393,7 +393,11 @@ async function continueSession() {
 
   chatStore.addOrUpdateSession(historySession.value)
   await chatStore.switchSession(sessionId)
-  await router.push({ name: 'hermes.chat' })
+  await router.push({
+    name: 'hermes.session',
+    params: { sessionId },
+    query: historySession.value.profile ? { profile: historySession.value.profile } : undefined,
+  })
 }
 
 </script>

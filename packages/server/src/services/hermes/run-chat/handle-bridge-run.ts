@@ -5,7 +5,8 @@
 
 import type { Server, Socket } from 'socket.io'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
-import { getSession, createSession, addMessage, updateSession, updateSessionStats } from '../../../db/hermes/session-store'
+import { getSession, createSession, addMessage, addMessages, updateSession, updateSessionStats, type HermesSessionRow } from '../../../db/hermes/session-store'
+import { getSessionDetailFromDbWithProfile } from '../../../db/hermes/sessions-db'
 import { updateUsage } from '../../../db/hermes/usage-store'
 import { logger, bridgeLogger } from '../../logger'
 import { AgentBridgeClient, type AgentBridgeContextEstimate, type AgentBridgeMessage, type AgentBridgeOutput } from '../agent-bridge'
@@ -91,6 +92,56 @@ function cacheBridgeContext(state: SessionState, data: Record<string, unknown> |
   }
 }
 
+async function seedLocalSessionFromHermesState(
+  sessionId: string,
+  profile: string,
+  existing: HermesSessionRow | null,
+): Promise<HermesSessionRow | null> {
+  if (existing && existing.message_count > 0) return existing
+
+  try {
+    const detail = await getSessionDetailFromDbWithProfile(sessionId, profile || 'default')
+    if (!detail || detail.source === 'api_server' || !detail.messages?.length) return existing
+
+    if (!existing) {
+      createSession({
+        id: sessionId,
+        profile: profile || 'default',
+        source: detail.source || 'cli',
+        model: detail.model || undefined,
+        title: detail.title || detail.preview || undefined,
+      })
+    }
+
+    addMessages(detail.messages.map(message => ({
+      session_id: sessionId,
+      role: message.role,
+      content: message.content || '',
+      tool_call_id: message.tool_call_id,
+      tool_calls: message.tool_calls,
+      tool_name: message.tool_name,
+      timestamp: message.timestamp,
+      token_count: message.token_count,
+      finish_reason: message.finish_reason,
+      reasoning: message.reasoning,
+      reasoning_details: message.reasoning_details,
+      reasoning_content: message.reasoning_content,
+    })))
+    updateSessionStats(sessionId)
+    const seeded = getSession(sessionId)
+    bridgeLogger.info({
+      sessionId,
+      profile,
+      messageCount: detail.messages.length,
+      source: detail.source,
+    }, '[chat-run-socket] seeded local session from Hermes state.db')
+    return seeded || existing
+  } catch (err) {
+    bridgeLogger.warn({ err, sessionId, profile }, '[chat-run-socket] failed to seed local session from Hermes state.db')
+    return existing
+  }
+}
+
 export async function handleBridgeRun(
   nsp: ReturnType<Server['of']>,
   socket: Socket,
@@ -111,7 +162,7 @@ export async function handleBridgeRun(
   let fullInstructions = instructions
     ? `${getSystemPrompt()}\n${instructions}`
     : getSystemPrompt()
-  const sessionRow = getSession(session_id)
+  let sessionRow = await seedLocalSessionFromHermesState(session_id, profile, getSession(session_id))
   const sessionModel = sessionRow?.model || ''
   const sessionProvider = sessionRow?.provider || ''
   const { model: resolvedModel, provider: resolvedProvider } = await resolveBridgeRunModelConfig({
