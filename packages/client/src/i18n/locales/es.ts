@@ -277,6 +277,7 @@ export default {
     copySessionLink: 'Copiar enlace de sesión',
     openSessionInNewTab: 'Abrir en una nueva pestaña',
     sessionLinkCopied: 'Session link copied',
+    continueSession: 'Continuar chat',
     copySessionId: 'Copiar ID de sesión',
     export: 'Exportar',
     exportFull: 'Exportación completa (JSON)',

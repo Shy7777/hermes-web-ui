@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { type Session } from '@/stores/hermes/chat'
+import { useChatStore, type Session } from '@/stores/hermes/chat'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useSessionBrowserPrefsStore } from '@/stores/hermes/session-browser-prefs'
@@ -21,6 +21,7 @@ const message = useMessage()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const chatStore = useChatStore()
 
 const routeSessionId = computed(() => {
   const value = route.params.sessionId
@@ -84,6 +85,7 @@ async function loadHistorySession(sessionId: string, profile?: string | null) {
     createdAt: sessionDetail.started_at * 1000,
     updatedAt: (sessionDetail.last_active || sessionDetail.started_at) * 1000,
     model: sessionDetail.model,
+    provider: sessionDetail.provider || sessionDetail.billing_provider || '',
     messageCount: sessionDetail.message_count,
     inputTokens: sessionDetail.input_tokens,
     outputTokens: sessionDetail.output_tokens,
@@ -376,6 +378,24 @@ async function handleDeleteSession(id: string, profile?: string | null) {
   message.success(t('chat.sessionDeleted'))
 }
 
+async function continueSession() {
+  const sessionId = historySessionId.value
+  if (!sessionId) return
+
+  if (!historySession.value || historySession.value.id !== sessionId) {
+    await loadHistorySession(sessionId, historySessionProfile(sessionId))
+  }
+
+  if (!historySession.value) {
+    message.error(t('chat.sessionNotFound'))
+    return
+  }
+
+  chatStore.addOrUpdateSession(historySession.value)
+  await chatStore.switchSession(sessionId)
+  await router.push({ name: 'hermes.chat' })
+}
+
 </script>
 
 <template>
@@ -453,6 +473,14 @@ async function handleDeleteSession(id: string, profile?: string | null) {
           <span v-if="historySession?.workspace" class="workspace-badge" :title="historySession.workspace">📁 {{ historySession.workspace.split('/').pop() || historySession.workspace }}</span>
         </div>
         <div class="header-actions">
+          <NButton
+            type="primary"
+            size="small"
+            :disabled="!historySessionId"
+            @click="continueSession"
+          >
+            {{ t('chat.continueSession') }}
+          </NButton>
           <NTooltip trigger="hover">
             <template #trigger>
               <NButton quaternary size="small" @click="showOutline = !showOutline" circle>

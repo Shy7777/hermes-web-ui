@@ -277,6 +277,7 @@ export default {
     copySessionLink: '세션 링크 복사',
     openSessionInNewTab: '새 탭에서 열기',
     sessionLinkCopied: 'Session link copied',
+    continueSession: '대화 계속',
     copySessionId: '세션 ID 복사',
     export: '내보내기',
     exportFull: '전체 내보내기 (JSON)',

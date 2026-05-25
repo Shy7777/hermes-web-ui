@@ -291,6 +291,7 @@ export default {
     copySessionLink: '複製工作階段連結',
     openSessionInNewTab: '在新分頁開啟',
     sessionLinkCopied: 'Session link copied',
+    continueSession: '繼續對話',
     copySessionId: '複製工作階段 ID',
     export: '匯出',
     exportFull: '完整匯出 (JSON)',

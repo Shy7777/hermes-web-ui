@@ -277,6 +277,7 @@ export default {
     copySessionLink: 'セッションリンクをコピー',
     openSessionInNewTab: '新しいタブで開く',
     sessionLinkCopied: 'Session link copied',
+    continueSession: 'チャットを続ける',
     copySessionId: 'セッション ID をコピー',
     export: 'エクスポート',
     exportFull: 'フルエクスポート (JSON)',

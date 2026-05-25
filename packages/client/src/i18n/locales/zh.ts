@@ -293,6 +293,7 @@ export default {
     copySessionLink: '复制会话链接',
     openSessionInNewTab: '在新标签页打开',
     sessionLinkCopied: 'Session link copied',
+    continueSession: '继续对话',
     copySessionId: '复制会话 ID',
     export: '导出',
     exportFull: '全量导出 (JSON)',
